@@ -1,0 +1,1258 @@
+---
+title: "L'adoption de l'IA comme indicateur de puissance économique"
+author: "Chancia ISSA ~ Lina BICHBICHE ~ Vincent MAUNIER ~ Njaka RAKOTOBE" 
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: tango
+    number_sections: true
+    df_print: kable
+    code_folding: hide
+    fig_path: "figures/"
+  word_document:
+    always_allow_html: true
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    includes:
+      in_header: header.tex
+subtitle: SAE - Analyse de données, reporting et datavisualisation  | BUT Science des Données · IUT de Paris - Rives de Seine
+  · 2025–2026
+---
+
+<style>
+body {  serif; font-size: 15px; color: #2c2c2c; }
+h1, h2, h3 { font-family: 'Arial', sans-serif; }
+h1 { color: #1a3a5c; border-bottom: 3px solid #1a3a5c; padding-bottom: 6px; }
+h2 { color: #1a3a5c; border-left: 5px solid #2e86c1; padding-left: 10px; }
+h3 { color: #2e86c1; }
+.encadre-bleu   { background:#eaf4fb; border-left:5px solid #2e86c1; padding:12px 16px; border-radius:4px; margin:14px 0; }
+.encadre-vert   { background:#eafaf1; border-left:5px solid #27ae60; padding:12px 16px; border-radius:4px; margin:14px 0; }
+.encadre-orange { background:#fef9e7; border-left:5px solid #f39c12; padding:12px 16px; border-radius:4px; margin:14px 0; }
+.encadre-rouge  { background:#fdedec; border-left:5px solid #e74c3c; padding:12px 16px; border-radius:4px; margin:14px 0; }
+blockquote { background:#f4f6f7; border-left:4px solid #aab7b8; padding:10px 15px;
+             border-radius:3px; font-style:normal; color:#444; font-size:14px; }
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo       = FALSE,
+  warning    = FALSE,
+  message    = FALSE,
+  fig.align  = "center",
+  fig.width  = 8,
+  fig.height = 5,
+  out.width  = "90%",
+  dpi        = 300,
+  fig.path   = "figures/",
+  dev        = "png"
+)
+options(knitr.table.format = "latex")
+```
+
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(pastecs)
+library(kableExtra)
+library(gridExtra)
+library(corrplot)
+library(car)
+library(ineq)
+library(RColorBrewer)
+```
+
+```{r}
+# ── Import ──────────────────────────────────────────────────────────────────
+data_index <- read.csv("../data/AI_index_db.csv",                      stringsAsFactors=FALSE)
+data_ia    <- read.csv("../data/Global_AI_Content_Impact_Dataset.csv", stringsAsFactors=FALSE)
+```
+
+```{r import-prep, include=FALSE}
+
+
+# ── Nettoyage noms de colonnes ───────────────────────────────────────────────
+clean_names <- function(df) {
+  names(df) <- names(df) |>
+    str_replace_all("\\.+$","") |> str_replace_all("\\.{2,}",".")
+  df
+}
+data_ia    <- clean_names(data_ia)
+data_index <- clean_names(data_index)
+
+# ── Harmonisation pays ───────────────────────────────────────────────────────
+data_index$Country <- dplyr::recode(data_index$Country,
+  "United States of America"="USA","United Kingdom"="UK",
+  "The Netherlands"="Netherlands")
+
+# ── Fusion ───────────────────────────────────────────────────────────────────
+data_merge <- data_ia |> left_join(data_index, by="Country")
+
+# ── Variables dérivées ───────────────────────────────────────────────────────
+data_merge$Regulation <- factor(data_merge$Regulation.Status,
+  levels=c("Lenient","Moderate","Strict"),
+  labels=c("Souple","Modérée","Stricte"), ordered=TRUE)
+data_merge$Regulation_Num  <- as.integer(data_merge$Regulation)
+data_merge$Regulation_Label <- dplyr::recode(data_merge$Regulation.Status,
+  "Lenient"="Souple","Moderate"="Modérée","Strict"="Stricte")
+data_merge$RD <- rowMeans(data_merge[,c("Research","Development")], na.rm=TRUE)
+
+# ── Dataset agrégé par pays ──────────────────────────────────────────────────
+data_pays <- data_merge |>
+  group_by(Country, Region, Income.group, Cluster, Political.regime) |>
+  summarise(
+    Adoption      = mean(AI.Adoption.Rate,               na.rm=TRUE),
+    Revenus       = mean(Revenue.Increase.Due.to.AI,     na.rm=TRUE),
+    Emplois       = mean(Job.Loss.Due.to.AI,             na.rm=TRUE),
+    Collaboration = mean(Human.AI.Collaboration.Rate,    na.rm=TRUE),
+    Confiance     = mean(Consumer.Trust.in.AI,           na.rm=TRUE),
+    MarketShare   = mean(Market.Share.of.AI.Companies,   na.rm=TRUE),
+    Score         = mean(Total.score,                    na.rm=TRUE),
+    Infrastructure= mean(Infrastructure,                 na.rm=TRUE),
+    RD            = mean(RD,                             na.rm=TRUE),
+    GovStrategy   = mean(Government.Strategy,            na.rm=TRUE),
+    Commercial    = mean(Commercial,                     na.rm=TRUE),
+    OpEnv         = mean(Operating.Environment,          na.rm=TRUE),
+    Talent        = mean(Talent,                         na.rm=TRUE),
+    .groups="drop"
+  )
+
+# ── Palettes ─────────────────────────────────────────────────────────────────
+pal_ind <- c(Automotive="#e74c3c", Education="#3498db", Finance="#2ecc71",
+             Gaming="#9b59b6", Healthcare="#e67e22", Legal="#1abc9c",
+             Manufacturing="#e91e63", Marketing="#f39c12", Media="#607d8b",
+             Retail="#795548")
+pal_tool <- c(ChatGPT="#10a37f", Claude="#d97706", Midjourney="#6366f1",
+              "DALL-E"="#ef4444","Stable Diffusion"="#8b5cf6",
+              Bard="#4285f4", Synthesia="#06b6d4")
+
+# ── Fonctions utilitaires ────────────────────────────────────────────────────
+reg_pays <- function(x_var, y_var, data=data_pays) {
+  f   <- as.formula(paste(y_var,"~",x_var))
+  mod <- lm(f, data=data)
+  res <- summary(mod)
+  pv  <- pf(res$fstatistic[1],res$fstatistic[2],res$fstatistic[3],lower.tail=FALSE)
+  list(mod=mod, r2=round(res$r.squared,4), r2adj=round(res$adj.r.squared,4),
+       b0=round(coef(mod)[1],2), b1=round(coef(mod)[2],3),
+       pval=round(pv,4), signif=pv<0.05)
+}
+get_p <- function(aov_obj) round(summary(aov_obj)[[1]]$`Pr(>F)`[1],4)
+get_f <- function(aov_obj) round(summary(aov_obj)[[1]]$`F value`[1],2)
+
+# ── Pré-calcul de tous les tests ─────────────────────────────────────────────
+# Axe I
+t_infra  <- reg_pays("Infrastructure","Adoption")
+t_rd     <- reg_pays("RD","Adoption")
+t_gov    <- reg_pays("GovStrategy","Adoption")
+t_comm   <- reg_pays("Commercial","Adoption")
+t_openv  <- reg_pays("OpEnv","Adoption")
+t_score  <- reg_pays("Score","Adoption")
+
+# Axe II
+t_rev    <- reg_pays("Adoption","Revenus")
+t_conf   <- reg_pays("Adoption","Confiance")
+an_emplois <- aov(Job.Loss.Due.to.AI ~ Industry, data=data_merge)
+an_adopt   <- aov(AI.Adoption.Rate   ~ Industry, data=data_merge)
+cor_t_collab <- cor.test(data_merge$Human.AI.Collaboration.Rate,
+                         data_merge$Job.Loss.Due.to.AI, method="pearson")
+cor_t_emprev <- cor.test(data_merge$Job.Loss.Due.to.AI,
+                         data_merge$Revenue.Increase.Due.to.AI, method="pearson")
+
+# Calcul Gini
+rev_pays_gini <- data_merge |>
+  group_by(Country) |>
+  summarise(rev_moy=mean(Revenue.Increase.Due.to.AI, na.rm=TRUE)) |>
+  drop_na() |> arrange(desc(rev_moy))
+rev_sec_gini <- data_merge |>
+  group_by(Industry) |>
+  summarise(rev_moy=mean(Revenue.Increase.Due.to.AI, na.rm=TRUE)) |>
+  drop_na()
+gini_pays    <- ineq(rev_pays_gini$rev_moy, type="Gini")
+gini_secteur <- ineq(rev_sec_gini$rev_moy, type="Gini")
+
+# Axe III
+an_conf_pay  <- aov(Consumer.Trust.in.AI ~ Country,           data=data_merge)
+an_ms_tool   <- aov(Market.Share.of.AI.Companies ~ Top.AI.Tools.Used, data=data_merge)
+an_conf_ind  <- aov(Consumer.Trust.in.AI ~ Industry,          data=data_merge)
+an_conf_reg  <- aov(Consumer.Trust.in.AI ~ Regulation.Status, data=data_merge)
+an_ms_ind    <- aov(Market.Share.of.AI.Companies ~ Industry,  data=data_merge)
+sp_reg_a <- cor.test(data_merge$Regulation_Num, data_merge$AI.Adoption.Rate, method="spearman")
+sp_reg_c <- cor.test(data_merge$Regulation_Num, data_merge$Consumer.Trust.in.AI, method="spearman")
+
+# Régression multiple Axe I
+df_struct <- data_merge |>
+  select(AI.Adoption.Rate, Talent, Infrastructure, RD, Government.Strategy) |>
+  drop_na()
+reg_mult <- lm(AI.Adoption.Rate ~ Talent + Infrastructure + RD + Government.Strategy,
+               data=df_struct)
+sum_reg_mult <- summary(reg_mult)
+vif_vals <- vif(reg_mult)
+```
+
+---
+
+# Abstract {-}
+
+<div class="encadre-bleu">
+Cette étude analyse dans quelle mesure l'**adoption de l'intelligence artificielle** constitue un indicateur de **puissance économique et d'influence internationale** des États, sur la période **2020–2025**. Elle mobilise deux bases de données complémentaires et structure l'analyse en **trois axes** pour tester **7 hypothèses** statistiques. Les résultats montrent que la relation entre adoption de l'IA et puissance économique est réelle mais complexe : elle ne suit pas un schéma linéaire simple et dépend fortement des contextes sectoriels et culturels. Cette complexité rejoint les travaux récents en relations internationales, qui soulignent que le leadership en IA est autant une question de *récit stratégique* que de capacités techniques mesurables.
+</div>
+
+---
+
+# Introduction
+
+## Problématique et hypothèses de recherche
+
+<div class="encadre-bleu">
+**En quoi l'adoption de l'IA constitue-t-elle un indicateur de puissance économique
+et d'influence internationale pour les États ?**
+</div>
+
+Notre hypothèse de départ est la suivante : les pays les mieux positionnés
+mondialement en matière d'IA, c'est-à-dire ceux qui investissent le plus en R&D, qui ont
+les meilleures infrastructures et une stratégie nationale claire, devraient adopter
+davantage l'IA. Et cette adoption devrait se traduire par des effets économiques
+mesurables : hausse des revenus, transformation du marché du travail, confiance
+des citoyens dans la technologie.
+
+Pour tester cette hypothèse générale, nous la déclinons en **trois axes analytiques**, avec deux tests par axe :
+
+| Axe | Question centrale | Tests retenus |
+|-----|------------------|---------------|
+| **I — Capacités → Adoption** | Les pays les plus développés adoptent-ils davantage l'IA ? | R&D → Adoption · Cluster → Adoption |
+| **II — Adoption → Effets économiques** | L'adoption de l'IA produit-elle des effets économiques mesurables ? | Adoption → Confiance · Perte emplois → Revenus |
+| **III — Dimension sectorielle** | L'impact de l'IA varie-t-il selon le secteur d'activité ? | Industrie → Perte emplois · Pays → Confiance |
+
+> **Seuil retenu :** p < 0,05 pour tous les tests statistiques.
+
+## Présentation des données
+
+**Global AI Content Impact Dataset** : base principale : 10 pays, 2020–2025,
+200 observations, 12 variables. Elle mesure l'impact concret de l'IA dans l'économie :
+taux d'adoption, perte d'emplois, hausse des revenus, collaboration humain-IA,
+confiance des consommateurs, niveau de régulation, outil IA utilisé, part de marché.
+
+**Global AI Index** : base complémentaire : 62 pays, 13 variables mesurant les
+*capacités* nationales en IA : talent, infrastructure, R&D, stratégie gouvernementale,
+score global synthétique, cluster de maturité, régime politique.
+
+La **fusion** est réalisée par jointure gauche (`left_join`) sur la variable `Country`,
+après harmonisation des noms de pays (ex. : *"United States of America"* → *"USA"*).
+Les 10 pays du dataset principal étant tous présents dans le *Global AI Index*,
+aucune observation n'est perdue lors de la fusion.
+
+> **⚠️ Note sur la qualité des données :** Nous avons constaté certaines incohérences dans le *Global AI Content Impact Dataset*, notamment la présence d'outils comme ChatGPT dès 2020, alors que leur déploiement public est postérieur. Ces incohérences invitent à interpréter les résultats avec prudence : ils décrivent les tendances du jeu de données utilisé, qui peut ne pas reflécter exactement la réalité mondiale.
+
+```{r apercu, echo=FALSE}
+cat("Pays couverts :", paste(sort(unique(data_merge$Country)), collapse=", "), "\n")
+cat("Secteurs :", paste(sort(unique(data_merge$Industry)), collapse=", "), "\n")
+cat("Outils IA :", paste(sort(unique(data_merge$Top.AI.Tools.Used)), collapse=", "), "\n")
+```
+
+---
+
+# Description des données
+
+<div class="encadre-orange">
+Avant de tester nos hypothèses, nous décrivons les données pour en comprendre
+la structure. Cette étape permet d'identifier les distributions, de repérer les
+valeurs extrêmes, et de dégager les premières tendances qui orienteront nos choix
+de méthodes statistiques.
+</div>
+
+## Statistiques descriptives
+
+```{r stats-desc}
+vars_desc <- c("AI.Adoption.Rate","Job.Loss.Due.to.AI","Revenue.Increase.Due.to.AI",
+               "Human.AI.Collaboration.Rate","Consumer.Trust.in.AI",
+               "Market.Share.of.AI.Companies")
+
+desc_stats <- function(x) {
+  c(n         = length(na.omit(x)),
+    Moyenne   = round(mean(x, na.rm=TRUE), 2),
+    Médiane   = round(median(x, na.rm=TRUE), 2),
+    Éc.type   = round(sd(x, na.rm=TRUE), 2),
+    CV_pct    = round(sd(x, na.rm=TRUE)/mean(x, na.rm=TRUE)*100, 1),
+    Min       = round(min(x, na.rm=TRUE), 2),
+    Max       = round(max(x, na.rm=TRUE), 2))
+}
+
+tab_stats <- as.data.frame(t(sapply(data_merge[,vars_desc], desc_stats)))
+rownames(tab_stats) <- c("Adoption (%)","Perte emplois (%)","Hausse revenus (%)",
+                         "Collab. H-IA (%)","Confiance (%)","Part marché (%)")
+colnames(tab_stats) <- c("n","Moyenne","Médiane","Éc.-type","CV (%)","Min","Max")
+
+kable(tab_stats,
+      caption="Statistiques descriptives — Variables d'impact IA (N=200)") |>
+  kable_styling(bootstrap_options=c("striped","hover","condensed"), font_size=12) |>
+  footnote(general="CV = Coefficient de variation (%). Un CV > 30 % traduit une forte hétérogénéité.",
+           general_title="Note :")
+```
+
+<div class="encadre-vert">
+**Ce qu'on retient :** Le taux d'adoption moyen est de 54 %, avec un écart-type
+de 24 points et un coefficient de variation élevé : les situations sont très
+différentes d'un pays à l'autre et d'un secteur à l'autre. La hausse des revenus
+(moy. ~40 %) et la perte d'emplois (moy. ~26 %) sont les deux faces économiques
+que nous allons analyser dans les axes II. La confiance des consommateurs (CV le
+plus faible) est la variable la plus homogène entre pays.
+</div>
+
+## Distributions — boxplots
+
+```{r boxplots-desc, fig.cap="Distribution des variables d'impact IA"}
+data_merge |>
+  select(all_of(vars_desc)) |>
+  pivot_longer(everything(), names_to="Variable", values_to="Valeur") |>
+  mutate(Variable=dplyr::recode(Variable,
+    "AI.Adoption.Rate"="Adoption (%)",
+    "Job.Loss.Due.to.AI"="Perte emplois (%)",
+    "Revenue.Increase.Due.to.AI"="Hausse revenus (%)",
+    "Human.AI.Collaboration.Rate"="Collab. H-IA (%)",
+    "Consumer.Trust.in.AI"="Confiance (%)",
+    "Market.Share.of.AI.Companies"="Part marché (%)")) |>
+  ggplot(aes(x=Variable, y=Valeur, fill=Variable)) +
+  geom_boxplot(outlier.colour="red", outlier.shape=16, alpha=0.8) +
+  stat_summary(fun=mean, geom="point", shape=18, size=3, color="black") +
+  facet_wrap(~Variable, scales="free") +
+  theme_minimal(base_size=12) +
+  theme(legend.position="none", axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(), strip.text=element_text(face="bold")) +
+  labs(title="Distribution des six variables d'impact IA",
+       subtitle="Losange noir = moyenne | Points rouges = valeurs aberrantes",
+       x="", y="Valeur")
+```
+
+<div class="encadre-vert">
+**Ce qu'on observe :** Aucune valeur aberrante majeure n'est détectée, les données
+sont de bonne qualité. La variable *Adoption (%)* a la boîte la plus large,
+confirmant une forte variabilité entre pays et secteurs : c'est précisément ce que
+nos hypothèses vont chercher à expliquer. La proximité moyenne/médiane sur toutes
+les variables légitime l'utilisation de tests paramétriques (ANOVA, Pearson).
+</div>
+
+## Profil des 10 pays
+
+```{r profil-pays}
+data_pays |>
+  select(Country, Region, Cluster, Adoption, Revenus, Emplois, Confiance, Score) |>
+  arrange(desc(Adoption)) |>
+  mutate(across(where(is.numeric), ~round(.,1))) |>
+  rename(Région=Region, `Adoption (%)`=Adoption, `Revenus (%)`=Revenus,
+         `Emplois (%)`=Emplois, `Confiance (%)`=Confiance,
+         `Score global`=Score) |>
+  kable(caption="Profil des 10 pays — moyennes 2020–2025, classés par adoption") |>
+  kable_styling(bootstrap_options=c("striped","hover"), font_size=12,latex_options = c("scale_down", "HOLD_position")) |>
+  row_spec(1:3, background="#eafaf1") |>
+  row_spec(8:10, background="#fdedec")
+```
+
+<div class="encadre-vert">
+**Ce qu'on observe :** Le tableau révèle un paradoxe immédiat. Les USA, classés
+*Power players* avec le score global IA le plus élevé (100), ne sont pas parmi
+les pays qui adoptent le plus l'IA. À l'inverse, le Royaume-Uni (*Traditional champion*)
+est en tête d'adoption malgré un score modeste. Ce paradoxe entre **capacité IA**
+et **adoption effective** est au cœur de notre problématique.
+</div>
+
+## Évolution de l'adoption par pays (2020–2025)
+
+```{r evol-adoption, fig.cap="Évolution du taux d'adoption de l'IA par pays", fig.height=6}
+evol <- data_merge |>
+  group_by(Year, Country, Region) |>
+  summarise(Adoption=mean(AI.Adoption.Rate, na.rm=TRUE), .groups="drop")
+
+variation <- evol |>
+  filter(Year %in% c(2020,2025)) |>
+  pivot_wider(names_from=Year, values_from=Adoption, names_prefix="Y") |>
+  mutate(delta=round(Y2025-Y2020,1)) |>
+  select(Country, delta)
+
+evol <- evol |> left_join(variation, by="Country")
+
+ggplot(evol, aes(x=Year, y=Adoption, color=Country, group=Country)) +
+  geom_line(linewidth=1.2) + geom_point(size=3) +
+  geom_text(data=evol |> filter(Year==2025),
+            aes(label=paste0(Country," (",ifelse(delta>=0,"+",""),delta," pts)")),
+            hjust=-0.05, size=3.2, fontface="bold") +
+  scale_x_continuous(breaks=2020:2025, limits=c(2020,2027)) +
+  theme_minimal(base_size=13) + theme(legend.position="none") +
+  labs(title="Évolution du taux d'adoption de l'IA — 2020 à 2025",
+       subtitle="Variation totale sur la période indiquée entre parenthèses",
+       x="Année", y="Taux d'adoption moyen (%)")
+```
+
+<div class="encadre-vert">
+**Ce qu'on observe :** Les trajectoires sont très différentes d'un pays à l'autre.
+La **Corée du Sud** et le **Japon** progressent massivement alors qu'ils partaient
+de niveaux très bas en 2020. L'**Inde** affiche le cas le plus surprenant avec un recul.
+Les **USA** ne progressent que faiblement malgré leur leadership mondial en capacité IA.
+Ce constat nous amène directement à notre premier axe d'analyse.
+</div>
+
+---
+
+# Axe I — Les capacités d'un pays déterminent-elles son adoption de l'IA ?
+
+<div class="encadre-bleu">
+**Ce qu'on cherche à savoir :** Si l'adoption de l'IA est un indicateur de puissance,
+les pays les mieux positionnés mondialement, c'est-à-dire ceux qui investissent le plus en R&D,
+qui ont les meilleures infrastructures et une stratégie nationale claire, devraient
+être ceux qui l'adoptent le plus.
+
+**Comment on le fait :** Nous mobilisons deux approches complémentaires.
+D'abord une **matrice de corrélation de Pearson** pour visualiser l'ensemble des
+associations entre capacités structurelles et adoption. Ensuite une **régression
+linéaire multiple** pour quantifier l'effet propre de chaque capacité en contrôlant
+les autres. Pour la dimension qualitative (classement de maturité), un **boxplot
+comparatif** permet de visualiser les différences entre groupes de pays.
+
+> **Note :** Les tests de cet axe sont réalisés sur les **10 pays agrégés** (moyennes 2020–2025). La puissance statistique est donc limitée : un résultat non significatif peut refléter un manque de données plutôt qu'une absence de relation.
+</div>
+
+## H1.1 — Les capacités structurelles nationales déterminent l'adoption
+
+**Hypothèse :** les pays disposant de meilleurs indicateurs structurels (talent,
+infrastructure, R&D, stratégie gouvernementale) présentent des taux d'adoption
+de l'IA plus élevés.
+
+**Méthode.** La matrice de corrélation de Pearson permet de visualiser simultanément
+toutes les associations entre l'adoption et les capacités structurelles, ainsi que
+les corrélations entre variables explicatives (risque de multicolinéarité). Elle est
+préférée à des régressions séparées qui ne contrôlent pas les effets conjoints.
+
+```{r axe1-corrplot, fig.cap="Matrice de corrélations — Adoption de l'IA et capacités structurelles nationales", fig.height=5.5}
+df_cor <- data_pays |>
+  select(`Adoption IA`=Adoption, Talent, Infrastructure, `R&D`=RD,
+         `Strat. Gouv.`=GovStrategy, Commercial, `Env. Op.`=OpEnv) |>
+  drop_na()
+
+cor_mat <- cor(df_cor, use="complete.obs")
+
+corrplot(cor_mat,
+         method="color", type="upper",
+         addCoef.col="black", tl.col="black", tl.srt=45,
+         col=colorRampPalette(c("#d73027","white","#1a9850"))(200),
+         mar=c(0,0,1.5,0),
+         title="Adoption IA & capacités structurelles (r de Pearson)")
+```
+
+```{r axe1-regmult, include=FALSE}
+# Régression multiple : effet propre de chaque capacité en contrôlant les autres
+reg_mult_r2  <- round(sum_reg_mult$adj.r.squared, 3)
+reg_mult_pv  <- round(pf(sum_reg_mult$fstatistic[1],
+                          sum_reg_mult$fstatistic[2],
+                          sum_reg_mult$fstatistic[3], lower.tail=FALSE), 4)
+reg_mult_sig <- reg_mult_pv < 0.05
+```
+
+**Régression multiple complémentaire :** pour quantifier l'effet *propre* de chaque
+capacité structurelle sur l'adoption, en contrôlant simultanément les autres,
+une régression linéaire multiple a été estimée. Le R² ajusté est de
+**`r reg_mult_r2`** (p = `r reg_mult_pv`). Les valeurs VIF sont toutes inférieures
+à 5 (max = `r round(max(vif_vals),1)`), confirmant l'absence de multicolinéarité
+problématique.
+
+<div class="`r if(reg_mult_sig) 'encadre-vert' else 'encadre-rouge'`">
+**Ce qu'on constate :** Le modèle multiple explique `r round(reg_mult_r2*100,1)` %
+de la variance du taux d'adoption. Ce résultat est `r if(reg_mult_sig) "statistiquement significatif (p < 0,05)" else "non significatif au seuil de 5 %"`.
+Les corrélations individuelles dans la matrice permettent de repérer quelles
+capacités sont les plus fortement associées à l'adoption.
+
+**Ce qu'on en conclut :** `r if(reg_mult_sig) "H1.1 est confirmée : les capacités structurelles nationales sont bien associées au taux d'adoption de l'IA. Cependant, le R² reste modéré, ce qui suggère que d'autres facteurs (culturels, sectoriels, réglementaires) jouent également un rôle important." else "H1.1 n'est pas confirmée dans notre échantillon : on ne peut pas établir statistiquement que les pays les mieux dotés en capacités structurelles adoptent davantage l'IA. Ce résultat paradoxal s'explique peut-être par la petite taille de l'échantillon (10 pays) ou par des facteurs non linéaires."` Le cas des USA est révélateur : avec un score R&D de 100 (le maximum), leur taux d'adoption est pourtant proche de la médiane. **Avoir les capacités ne signifie pas forcément les déployer.**
+</div>
+
+## H1.2 — Les pays classés leaders IA adoptent davantage
+
+**Hypothèse :** les pays classés comme les plus avancés en IA (*Power players*,
+*Traditional champions*…) adoptent effectivement davantage l'IA que les pays
+moins avancés.
+
+**Méthode.** Un boxplot comparatif permet de visualiser la distribution de
+l'adoption pour chaque cluster de maturité. Avec seulement 10 pays, un test ANOVA
+formel serait peu puissant : la visualisation apporte ici l'information essentielle.
+
+```{r axe1-t2, fig.cap="H1.2 : Cluster de maturité IA et taux d'adoption", fig.height=5.5}
+data_pays |>
+  mutate(Cluster=factor(Cluster,
+    levels=c("Power players","Traditional champions",
+             "Rising stars","Waking up","Nascent"))) |>
+  ggplot(aes(x=Cluster, y=Adoption, fill=Cluster)) +
+  geom_boxplot(alpha=0.6, width=0.5, outlier.shape=NA) +
+  geom_jitter(aes(color=Cluster), width=0.08, size=5, alpha=0.9) +
+  geom_text(aes(label=Country), vjust=-1.2, size=3.5, fontface="bold") +
+  scale_fill_manual(values=c("Power players"="#e74c3c",
+                              "Traditional champions"="#e67e22",
+                              "Rising stars"="#f1c40f",
+                              "Waking up"="#2ecc71",
+                              "Nascent"="#3498db")) +
+  scale_color_manual(values=c("Power players"="#e74c3c",
+                               "Traditional champions"="#e67e22",
+                               "Rising stars"="#f1c40f",
+                               "Waking up"="#2ecc71",
+                               "Nascent"="#3498db")) +
+  theme_minimal(base_size=12) +
+  theme(legend.position="none", axis.text.x=element_text(angle=15, hjust=1)) +
+  labs(title="Cluster de maturité IA et taux d'adoption",
+       subtitle="Chaque point = un pays (moyenne 2020–2025)",
+       x="Cluster (AI Index)", y="Taux d'adoption moyen (%)")
+```
+
+```{r axe1-t2-tab}
+data_pays |>
+  group_by(Cluster) |>
+  summarise(
+    Pays=paste(Country, collapse=", "),
+    `Adoption moy. (%)`=round(mean(Adoption),1),
+    n=n(), .groups="drop") |>
+  arrange(desc(`Adoption moy. (%)`)) |>
+  kable(caption="Adoption moyenne par cluster de maturité IA") |>
+  kable_styling(bootstrap_options=c("striped","hover"), font_size=12)
+```
+
+<div class="encadre-rouge">
+**Ce qu'on constate :** Les *Power players* (USA et Chine) ont des adoptions très
+différentes l'une de l'autre. Les *Traditional champions* (UK, France, Allemagne,
+Canada) sont plus homogènes. La Corée du Sud et le Japon (*Rising stars*) ont des
+adoptions comparables aux pays les plus avancés malgré un classement bien inférieur.
+
+**Ce qu'on en conclut :** **H1.2 est infirmée.** Le classement international de
+maturité IA ne correspond pas au niveau d'adoption effectif dans l'économie.
+Un pays peut être reconnu mondialement comme leader en IA tout en n'étant pas
+le plus avancé dans son déploiement concret. Cela remet en question l'idée
+que l'adoption serait simplement le reflet d'une puissance IA préexistante.
+</div>
+
+## Adoption de l'IA par région
+
+Pour compléter la lecture par pays, ce graphique montre le taux d'adoption moyen regroupé par grande région géographique.
+
+```{r axe1-region, fig.cap="Adoption de l'IA par région", fig.height=3.5}
+data_merge |>
+  group_by(Region) |>
+  summarise(Adoption=mean(AI.Adoption.Rate, na.rm=TRUE), .groups="drop") |>
+  arrange(Adoption) |>
+  mutate(Region=factor(Region, levels=Region)) |>
+  ggplot(aes(x=Region, y=Adoption, fill=Adoption)) +
+  geom_col(alpha=0.9) +
+  geom_text(aes(label=paste0(round(Adoption,1),"%")),
+            hjust=-0.15, size=4, fontface="bold", color="#2c2c2c") +
+  scale_fill_gradient(low="#a8d8ea", high="#1a3a5c") +
+  coord_flip() +
+  scale_y_continuous(limits=c(0,75), labels=function(x) paste0(x,"%")) +
+  theme_minimal(base_size=13) +
+  theme(legend.position="none") +
+  labs(title="Adoption de l'IA par région",
+       x=NULL, y="Taux d'adoption moyen (%)")
+```
+
+<div class="encadre-vert">
+**Ce qu'on observe :** L'Europe affiche le taux d'adoption moyen le plus élevé (tiré notamment par le Royaume-Uni et la France), devant l'Asie-Pacifique et les Amériques. Les écarts entre régions restent modérés, ce qui confirme que la variabilité est avant tout intra-régionale : au sein d'une même zone, les pays peuvent avoir des profils d'adoption très différents.
+</div>
+
+---
+
+# Axe II — L'adoption de l'IA produit-elle des effets économiques mesurables ?
+
+<div class="encadre-bleu">
+**Ce qu'on cherche à savoir :** Si l'adoption de l'IA est vraiment un vecteur
+de puissance économique, elle devrait produire des effets concrets : certains secteurs
+seraient plus touchés que d'autres, la collaboration humain-IA modifierait
+l'impact sur l'emploi, et les bénéfices économiques seraient distribués de façon
+inégale.
+
+**Comment on le fait :** Nous combinons trois méthodes complémentaires :
+une **ANOVA** pour comparer les moyennes entre secteurs, un **test de corrélation
+de Pearson** pour mesurer la relation collaboration/emploi, et un **indice de Gini
+associé à la courbe de Lorenz** pour quantifier la concentration des gains de revenus.
+
+> **Note :** Les tests de cet axe sont réalisés sur les **200 observations** brutes (pays × secteur × année), ce qui assure une puissance statistique bien supérieure aux tests de l'Axe I.
+</div>
+
+## H2.1 — Les suppressions d'emplois varient selon le secteur d'activité
+
+**Hypothèse :** l'exposition aux destructions d'emplois liées à l'IA n'est pas
+uniforme entre secteurs. Certains secteurs (manufacturing, automatisation répétitive)
+seraient davantage touchés que d'autres (secteurs créatifs ou relationnels).
+
+**Méthode.** L'ANOVA à un facteur compare les moyennes de `Job Loss Due to AI`
+entre les 10 secteurs. Elle teste si la variance *entre groupes* est significativement
+supérieure à la variance *intra-groupe*. Un F élevé avec p < 0,05 indique qu'au
+moins un secteur se distingue.
+
+```{r axe2-t1, fig.cap="H2.1 : Perte d'emplois selon le secteur d'activité", fig.height=5.5}
+p_emp <- get_p(an_emplois)
+f_emp <- get_f(an_emplois)
+
+ggplot(data_merge,
+       aes(x=reorder(Industry, Job.Loss.Due.to.AI, median),
+           y=Job.Loss.Due.to.AI, fill=Industry)) +
+  geom_boxplot(alpha=0.75, outlier.colour="red", outlier.shape=16) +
+  stat_summary(fun=mean, geom="point", shape=23, size=3, fill="white") +
+  scale_fill_manual(values=pal_ind) +
+  coord_flip() +
+  theme_minimal(base_size=12) + theme(legend.position="none") +
+  labs(
+    title="Perte d'emplois due à l'IA selon le secteur",
+    subtitle=paste0("ANOVA : F = ",f_emp," | p = ",p_emp,
+                    " | Trié par médiane | Losange blanc = moyenne"),
+    x="", y="Perte d'emplois (%)")
+```
+
+```{r axe2-t1-tab}
+data_merge |>
+  group_by(Secteur=Industry) |>
+  summarise(
+    `Perte emplois moy. (%)`=round(mean(Job.Loss.Due.to.AI, na.rm=TRUE),1),
+    `Médiane (%)`=round(median(Job.Loss.Due.to.AI, na.rm=TRUE),1),
+    n=n(), .groups="drop") |>
+  arrange(desc(`Perte emplois moy. (%)`)) |>
+  kable(caption="Perte d'emplois moyenne par secteur") |>
+  kable_styling(bootstrap_options=c("striped","hover"), font_size=12) |>
+  row_spec(1:2, background="#fdedec") |>
+  row_spec(9:10, background="#eafaf1")
+```
+
+<div class="`r if(p_emp < 0.05) 'encadre-vert' else 'encadre-rouge'`">
+**Ce qu'on constate :** L'ANOVA donne F = `r f_emp`, p = `r p_emp`.
+`r if(p_emp < 0.05) "Les différences entre secteurs sont statistiquement établies au seuil de 5 %." else "Les différences entre secteurs ne sont pas statistiquement établies : la variabilité à l'intérieur de chaque secteur est trop forte pour conclure."` Le **Manufacturing** et l'**Automotive** sont les secteurs les plus touchés, tandis que **Marketing** et **Retail** sont les moins exposés.
+
+**Ce qu'on en conclut :** `r if(p_emp < 0.05) "H2.1 est confirmée : les secteurs qui réalisent des tâches manuelles et répétitives sont davantage exposés à l'automatisation IA que les secteurs créatifs ou relationnels. Ce résultat a des implications directes pour les politiques d'emploi." else "H2.1 n'est pas confirmée statistiquement. La forte variabilité au sein de chaque secteur (boîtes larges se chevauchant) montre que le secteur seul n'est pas suffisant pour expliquer les différences de perte d'emplois. D'autres facteurs (pays, outil utilisé) jouent certainement un rôle."` 
+</div>
+
+## H2.2 — La collaboration humain-IA protège l'emploi
+
+**Hypothèse :** un taux de collaboration humain-IA élevé est associé à moins
+de suppressions d'emplois. Une IA déployée en *complément* des compétences humaines
+génère moins de destructions qu'une IA *substitutive*.
+
+**Méthode.** Un test de corrélation de Pearson mesure la relation linéaire entre
+`Human.AI.Collaboration.Rate` et `Job.Loss.Due.to.AI`. Les deux variables sont
+quantitatives continues, ce qui justifie ce choix. Un r < 0 avec p < 0,05
+confirmerait l'hypothèse.
+
+```{r axe2-t2, fig.cap="H2.2 : Collaboration humain-IA et suppressions d'emplois (N=200)"}
+r_collab <- round(cor_t_collab$estimate, 3)
+p_collab <- round(cor_t_collab$p.value, 4)
+sig_collab <- p_collab < 0.05
+
+ggplot(data_merge, aes(x=Human.AI.Collaboration.Rate, y=Job.Loss.Due.to.AI)) +
+  geom_point(color="steelblue4", alpha=0.45, size=2) +
+  geom_smooth(method="lm", color="red", se=FALSE, linewidth=1.2) +
+  annotate("text",
+           x=min(data_merge$Human.AI.Collaboration.Rate, na.rm=TRUE)+5,
+           y=max(data_merge$Job.Loss.Due.to.AI, na.rm=TRUE)*0.92,
+           label=paste0("r = ",r_collab,"\np = ",p_collab),
+           size=4, color="black", hjust=0) +
+  theme_minimal(base_size=13) +
+  labs(title="Collaboration humain-IA et suppressions d'emplois",
+       subtitle="Chaque point = une observation (pays × secteur × année)",
+       x="Taux de collaboration humain-IA (%)", y="Perte d'emplois due à l'IA (%)")
+```
+
+<div class="`r if(sig_collab && r_collab < 0) 'encadre-vert' else if(sig_collab && r_collab > 0) 'encadre-orange' else 'encadre-rouge'`">
+**Ce qu'on constate :** La corrélation de Pearson est r = `r r_collab`, p = `r p_collab`.
+`r if(sig_collab) paste0("Ce résultat est statistiquement significatif (p < 0,05).") else "Ce résultat n'est pas significatif au seuil de 5 %."`
+La relation est `r if(r_collab < 0) "négative" else "positive"` : `r if(r_collab < 0) "plus la collaboration humain-IA est élevée, moins les suppressions d'emplois sont importantes." else "paradoxalement, une collaboration humain-IA élevée est ici associée à davantage de pertes d'emplois."` 
+
+**Ce qu'on en conclut :** `r if(sig_collab && r_collab < 0) "H2.2 est confirmée. Ce résultat suggère que l'IA déployée en mode collaboratif génère moins de destructions d'emplois que l'IA substitutive, une information précieuse pour les entreprises qui souhaitent déployer l'IA de façon responsable." else if(sig_collab && r_collab > 0) "H2.2 est infirmée. La relation positive observée suggère que dans notre dataset, les secteurs où l'IA est le plus utilisée en collaboration sont aussi ceux où la transition numérique est la plus intense, ce qui s'accompagne de restructurations." else "H2.2 est infirmée : aucun lien négatif significatif n'a été détecté, et la relation observée est même légèrement positive : aucun lien négatif et significatif entre collaboration humain-IA et pertes d'emplois n'a pu être établi au seuil de 5 %. L'hypothèse selon laquelle la collaboration protège l'emploi ne peut pas être soutenue par ces données."`
+</div>
+
+## H2.3 — Les gains de revenus liés à l'IA sont inégalement répartis
+
+**Hypothèse :** les bénéfices économiques de l'IA se concentrent sur un petit
+nombre de pays et de secteurs, plutôt que d'être distribués équitablement.
+
+**Méthode.** L'**indice de Gini** mesure l'inégalité d'une distribution : 0 correspond à une égalité parfaite (tous les pays ont les mêmes gains), 1 à une concentration totale (un seul pays capte tout). Il est associé à la **courbe de Lorenz** : plus cette courbe s'éloigne de la diagonale d'égalité, plus les gains sont concentrés. Cette méthode est préférée à une simple comparaison de moyennes car elle quantifie le *degré* d'inégalité, ce qu'une ANOVA ne fait pas.
+
+```{r axe2-t3, fig.cap="H2.3 : Courbe de Lorenz des revenus moyens liés à l'IA par pays", fig.height=4.5}
+par(mar=c(4,4,2,1))
+lc <- Lc(rev_pays_gini$rev_moy)
+plot(lc,
+     col="steelblue4", lwd=2,
+     xlab="Part cumulée des pays (du moins au plus riche)",
+     ylab="Part cumulée des revenus IA (%)")
+abline(0, 1, lty=2, col="red", lwd=2)
+legend("topleft",
+       legend=c(paste0("Distribution réelle (Gini = ",round(gini_pays,3),")"),
+                "Égalité parfaite (Gini = 0)"),
+       col=c("steelblue4","red"), lty=c(1,2), lwd=2, cex=0.85)
+```
+
+```{r axe2-t3-bar, fig.cap="Gain de revenus moyen lié à l'IA par pays — classement décroissant", fig.height=4}
+rev_pays_gini |>
+  ggplot(aes(x=reorder(Country, rev_moy), y=rev_moy, fill=rev_moy)) +
+  geom_col(alpha=0.9) +
+  geom_text(aes(label=paste0(round(rev_moy,1),"%")), hjust=-0.1, size=3.5) +
+  coord_flip() +
+  scale_fill_gradient(low="lightyellow", high="darkorange") +
+  scale_y_continuous(limits=c(0,80), labels=function(x) paste0(x,"%")) +
+  theme_minimal(base_size=11) + theme(legend.position="none") +
+  labs(title="Gain de revenus moyen lié à l'IA par pays",
+       x=NULL, y="Revenue Increase Due to AI (%)")
+```
+
+<div class="`r if(gini_pays > 0.2) 'encadre-orange' else 'encadre-vert'`">
+**Ce qu'on constate :** L'indice de Gini sur les revenus par pays est de
+**`r round(gini_pays,3)`**, et par secteur de **`r round(gini_secteur,3)`**.
+`r if(gini_pays < 0.15) "Un Gini inférieur à 0,15 traduit une distribution très égalitaire : les bénéfices économiques de l'IA sont relativement bien répartis entre les pays étudiés." else if(gini_pays < 0.3) "Un Gini modéré indique une inégalité réelle mais pas extrême : si des écarts entre pays existent, ils ne révèlent pas de concentration excessive." else "Un Gini élevé signale une forte concentration : un petit nombre de pays capte la majorité des gains de revenus liés à l'IA."`
+
+**Ce qu'on en conclut :** `r if(gini_pays > 0.2 || gini_secteur > 0.2) "H2.3 est partiellement confirmée : il existe une inégalité dans la distribution des gains liés à l'IA. La comparaison Gini pays / Gini secteur permet de déterminer si les inégalités sont davantage inter-nationales ou inter-sectorielles, ce qui a des implications différentes en termes de politiques publiques." else "H2.3 n'est pas confirmée : les gains de revenus sont relativement bien répartis dans notre échantillon. Cela peut s'expliquer par la nature du dataset, qui ne couvre que 10 pays déjà fortement développés."` 
+</div>
+
+---
+
+# Axe III — L'impact de l'IA varie-t-il selon le pays et la régulation ?
+
+<div class="encadre-bleu">
+**Ce qu'on cherche à savoir :** L'IA n'a pas le même impact partout. La confiance
+des citoyens varie-t-elle vraiment d'un pays à l'autre ? La régulation formalisée
+renforce-t-elle cette confiance, ou au contraire freine-t-elle l'adoption ?
+Ces questions touchent aux conditions culturelles et institutionnelles de la
+puissance économique liée à l'IA.
+
+**Comment on le fait :** Une **ANOVA** compare les niveaux de confiance entre pays.
+Des **corrélations de Spearman** testent l'effet de la régulation (variable ordinale)
+sur l'adoption et la confiance. Un **graphique à facettes** révèle d'éventuelles
+tensions entre ces effets.
+</div>
+
+## H3.1 — La confiance envers l'IA varie selon le pays
+
+**Hypothèse :** la confiance des consommateurs envers l'IA est une question
+*culturelle et nationale* : elle diffère significativement d'un pays à l'autre,
+indépendamment du niveau de développement économique.
+
+**Méthode.** Une ANOVA à un facteur teste si les moyennes de `Consumer.Trust.in.AI`
+diffèrent significativement selon les pays.
+
+```{r axe3-t1, fig.cap="H3.1 : Confiance consommateur selon le pays", fig.height=5}
+p_conf_pay <- get_p(an_conf_pay)
+f_conf_pay <- get_f(an_conf_pay)
+
+ggplot(data_merge,
+       aes(x=reorder(Country, Consumer.Trust.in.AI, median),
+           y=Consumer.Trust.in.AI, fill=Country)) +
+  geom_boxplot(alpha=0.75, outlier.colour="red", outlier.shape=16) +
+  stat_summary(fun=mean, geom="point", shape=23, size=3, fill="white") +
+  coord_flip() +
+  theme_minimal(base_size=12) + theme(legend.position="none") +
+  labs(
+    title="Confiance consommateur envers l'IA selon le pays",
+    subtitle=paste0("ANOVA : F = ",f_conf_pay," | p = ",p_conf_pay,
+                    " | Trié par médiane | Losange blanc = moyenne"),
+    x="", y="Confiance consommateur (%)")
+```
+
+```{r axe3-t1-tab}
+data_merge |>
+  group_by(Pays=Country, Région=Region) |>
+  summarise(
+    `Confiance moy. (%)`=round(mean(Consumer.Trust.in.AI, na.rm=TRUE),1),
+    `Médiane (%)`=round(median(Consumer.Trust.in.AI, na.rm=TRUE),1),
+    n=n(), .groups="drop") |>
+  arrange(desc(`Confiance moy. (%)`)) |>
+  kable(caption="Confiance consommateur par pays") |>
+  kable_styling(bootstrap_options=c("striped","hover"), font_size=12) |>
+  row_spec(1:2, background="#eafaf1") |>
+  row_spec(9:10, background="#fdedec")
+```
+
+```{r axe3-t1-bar, fig.cap="Confiance consommateur moyenne par pays", fig.height=4.5}
+data_pays |>
+  arrange(Confiance) |>
+  mutate(Country=factor(Country, levels=Country)) |>
+  ggplot(aes(x=Country, y=Confiance, fill=Region)) +
+  geom_col(alpha=0.85) +
+  geom_text(aes(label=paste0(round(Confiance,1),"%")),
+            hjust=-0.15, size=3.5, fontface="bold") +
+  scale_fill_manual(values=c("Americas"="#e74c3c","Asia-Pacific"="#2ecc71","Europe"="#3498db"),
+                    name="Région") +
+  coord_flip() +
+  scale_y_continuous(limits=c(0,85), labels=function(x) paste0(x,"%")) +
+  theme_minimal(base_size=12) +
+  theme(legend.position="bottom") +
+  labs(title="Confiance consommateur envers l'IA par pays",
+       subtitle="Moyennes 2020–2025, classées par ordre croissant",
+       x=NULL, y="Confiance consommateur moyenne (%)")
+```
+
+<div class="`r if(p_conf_pay < 0.05) 'encadre-vert' else 'encadre-rouge'`">
+**Ce qu'on constate :** L'ANOVA donne F = `r f_conf_pay`, p = `r p_conf_pay`.
+`r if(p_conf_pay < 0.05) "Les différences de confiance entre pays sont statistiquement établies." else "Les différences de confiance entre pays ne sont pas statistiquement établies."` L'**Allemagne** affiche la confiance la plus haute et le **Royaume-Uni** la plus basse, un écart notable entre deux pays européens comparables en termes de développement économique.
+
+**Ce qu'on en conclut :** `r if(p_conf_pay < 0.05) "H3.1 est confirmée. La confiance envers l'IA semble davantage être une question culturelle que liée au niveau de développement ou d'adoption. Le Royaume-Uni, pourtant en tête d'adoption, fait le moins confiance à l'IA. Ces différences culturelles sont un facteur clé pour comprendre les dynamiques d'adoption à long terme." else "H3.1 n'est pas confirmée statistiquement dans notre échantillon. Les différences observées entre pays en termes de confiance ne dépassent pas le seuil de significativité : la variabilité intra-pays (entre secteurs) est trop importante."`
+</div>
+
+> **Note méthodologique :** L'ANOVA ci-dessus est réalisée sur les **200 observations** brutes (toutes années et secteurs confondus). Pour approfondir, la régression ci-dessous travaille sur les **10 moyennes pays** agrégées, ce qui permet de visualiser clairement le lien entre adoption et confiance à l'échelle nationale.
+
+**Approfondissement — Adoption et confiance : quelle relation entre pays ?**
+
+On cherche à quantifier si les pays où l'IA est plus adoptée font davantage confiance à cette technologie, ou au contraire s'en méfient. On utilise pour cela une droite des moindres carrés sur les 10 pays agrégés, avec les moyennes 2020–2025.
+
+```{r axe3-reg-pays, fig.cap="Taux d'adoption et confiance des consommateurs envers l'IA", fig.height=5}
+reg_conf_adopt <- lm(Confiance ~ Adoption, data=data_pays)
+sum_reg_conf   <- summary(reg_conf_adopt)
+
+r2_ca  <- round(sum_reg_conf$r.squared, 4)
+b0_ca  <- round(coef(reg_conf_adopt)[1], 2)
+b1_ca  <- round(coef(reg_conf_adopt)[2], 3)
+pv_ca  <- round(sum_reg_conf$coefficients[2, 4], 4)
+sig_ca <- pv_ca < 0.05
+r_ca   <- round(sqrt(r2_ca) * sign(b1_ca), 3)
+
+pal_region <- c("Americas"="#e74c3c", "Asia-Pacific"="#2ecc71", "Europe"="#3498db")
+
+ggplot(data_pays, aes(x=Adoption, y=Confiance)) +
+  geom_smooth(method="lm", color="#8b0000", se=TRUE, linewidth=1.3,
+              fill="grey70", alpha=0.25) +
+  geom_point(aes(color=Region), size=5, alpha=0.9) +
+  geom_text(aes(label=Country, color=Region),
+            vjust=-1.1, size=3.4, fontface="bold") +
+  scale_color_manual(values=pal_region, name="Région") +
+  annotate("text",
+           x=min(data_pays$Adoption) + 0.3,
+           y=max(data_pays$Confiance) - 0.5,
+           label=paste0("R² = ", r2_ca, "  |  p = ", pv_ca),
+           size=4, color="black", hjust=0, fontface="italic") +
+  theme_minimal(base_size=13) +
+  theme(legend.position="bottom") +
+  labs(title="Taux d'adoption et confiance des consommateurs envers l'IA",
+       x="Taux d'adoption moyen (%)",
+       y="Confiance consommateur moyenne (%)")
+```
+
+```{r axe3-reg-pays-tab}
+as.data.frame(sum_reg_conf$coefficients) |>
+  round(4) |>
+  tibble::rownames_to_column("Terme") |>
+  mutate(Terme=dplyr::recode(Terme,
+    "(Intercept)"="Constante (β₀)",
+    "Adoption"="Adoption IA (β₁)")) |>
+  rename(Coefficient=Estimate, `Erreur std.`=`Std. Error`,
+         t=`t value`, `p-valeur`=`Pr(>|t|)`) |>
+  kable(caption=paste0("Coefficients OLS — Confiance ~ Adoption (R² = ", r2_ca, ", n = 10 pays)")) |>
+  kable_styling(bootstrap_options=c("striped","hover"), font_size=12)
+```
+
+<div class="`r if(sig_ca) 'encadre-vert' else 'encadre-rouge'`">
+**Ce qu'on constate :** Le R² est de `r r2_ca` — le taux d'adoption est associé à `r round(r2_ca*100,1)` % de la variation de confiance entre pays. La p-valeur de `r pv_ca` indique que ce lien est `r if(sig_ca) "significatif au seuil de 5 %" else "non significatif au seuil de 5 %"`. La relation est `r if(b1_ca < 0) paste0("négative (β₁ = ", b1_ca, ") : plus un pays adopte l'IA, moins ses citoyens lui font confiance.") else paste0("positive (β₁ = ", b1_ca, ") : plus un pays adopte l'IA, plus ses citoyens lui font confiance.")`
+
+**Ce qu'on en conclut :**
+`r if(sig_ca && b1_ca < 0) "C'est le résultat le plus intéressant de notre analyse, mais à interpréter avec prudence : avec n = 10 pays, un ou deux observations atypiques suffisent à créer une tendance artificielle. Ce lien négatif entre adoption et confiance est une piste sérieuse, pas une conclusion établie. On aurait pu s'attendre à ce que l'usage familiarise et rassure : c'est l'inverse qui se produit. Les pays où l'IA est la plus présente sont aussi ceux où les citoyens lui font le moins confiance. Cela suggère que l'exposition aux limites et aux risques de l'IA (désinformation, perte d'emplois, vie privée) génère de la méfiance plutôt que de l'adhésion. Ce résultat a des implications importantes pour notre problématique : si l'adoption érode la confiance, cela pourrait freiner le déploiement à long terme de l'IA et remettre en question son rôle de levier de puissance durable." else if(sig_ca && b1_ca > 0) "La relation positive et significative suggère qu'adopter davantage l'IA est associé à une plus grande confiance envers elle, dans un effet de familiarisation. Les populations habituées à interagir avec l'IA semblent davantage lui faire confiance." else "Aucun lien linéaire significatif entre adoption et confiance n'est établi à l'échelle des pays. La confiance semble davantage dépendre de facteurs culturels nationaux que du simple niveau d'adoption."`
+</div>
+
+## H3.2 — La régulation influence-t-elle l'adoption et la confiance ?
+
+**Hypothèse :** un cadre réglementaire plus strict pourrait freiner l'adoption de l'IA (les entreprises hésitent à déployer) tout en renforçant la confiance des citoyens (qui se sentent mieux protégés). Ces deux effets opposés créent un arbitrage pour les décideurs publics.
+
+**Méthode.** On mesure avec une corrélation de Spearman si le niveau de régulation (Souple / Modérée / Stricte) est lié à l'adoption et à la confiance. Le graphique montre les moyennes observées pour chaque niveau de régulation sur les trois indicateurs clés.
+
+> **Note :** Cette analyse porte sur les 200 observations. La régulation est une variable ordinale à 3 niveaux, ce qui justifie le choix de Spearman plutôt que Pearson.
+
+```{r axe3-t2-tests, include=FALSE}
+rho_reg_a <- round(sp_reg_a$estimate, 3)
+p_reg_a   <- round(sp_reg_a$p.value, 4)
+rho_reg_c <- round(sp_reg_c$estimate, 3)
+p_reg_c   <- round(sp_reg_c$p.value, 4)
+sig_reg_a <- p_reg_a < 0.05
+sig_reg_c <- p_reg_c < 0.05
+```
+
+```{r axe3-t2-facette, fig.cap="H3.2 : Effets de la régulation sur adoption, revenus et confiance (moyennes par niveau)"}
+data_merge |>
+  drop_na(Regulation_Label) |>
+  mutate(Regulation_Label=factor(Regulation_Label,
+                                  levels=c("Souple","Modérée","Stricte"))) |>
+  group_by(Regulation_Label) |>
+  summarise(
+    Adoption  = mean(AI.Adoption.Rate, na.rm=TRUE),
+    Revenus   = mean(Revenue.Increase.Due.to.AI, na.rm=TRUE),
+    Confiance = mean(Consumer.Trust.in.AI, na.rm=TRUE),
+    .groups="drop") |>
+  pivot_longer(cols=c(Adoption, Revenus, Confiance),
+               names_to="Indicateur", values_to="Valeur") |>
+  ggplot(aes(x=Regulation_Label, y=Valeur, fill=Regulation_Label)) +
+  geom_col(alpha=0.9) +
+  geom_text(aes(label=paste0(round(Valeur,1),"%")),
+            vjust=-0.5, size=3.5) +
+  facet_wrap(~Indicateur, scales="free_y") +
+  scale_fill_brewer(palette="Set2") +
+  labs(title="Effets de la régulation sur trois indicateurs clés",
+       subtitle=paste0("Spearman — Régulation × Adoption : ρ=",rho_reg_a,
+                       " p=",p_reg_a,
+                       " | Régulation × Confiance : ρ=",rho_reg_c,
+                       " p=",p_reg_c),
+       x="Niveau de régulation", y=NULL) +
+  theme_minimal(base_size=11) +
+  theme(legend.position="none", strip.text=element_text(face="bold"))
+```
+
+<div class="encadre-orange">
+**Ce qu'on constate :** La corrélation entre régulation et adoption est
+ρ = `r rho_reg_a` (p = `r p_reg_a`), `r if(sig_reg_a) "significative" else "non significative au seuil de 5 %"`.
+Entre régulation et confiance : ρ = `r rho_reg_c` (p = `r p_reg_c`) —
+`r if(sig_reg_c) "significative" else "non significative au seuil de 5 %"`.
+Le graphique montre les niveaux moyens observés selon le degré de régulation.
+
+**Ce qu'on en conclut :**
+`r if(sig_reg_a && rho_reg_a < 0 && sig_reg_c && rho_reg_c > 0) "H3.2 est confirmée : une régulation stricte est associée à moins d'adoption mais à plus de confiance. C'est bien un arbitrage réel pour les décideurs." else if(!sig_reg_a && !sig_reg_c) "H3.2 n'est pas confirmée : aucun des deux effets attendus n'est statistiquement établi dans nos données. On observe des tendances sur le graphique, mais elles ne sont pas significatives — elles pourraient être dues au hasard de l'échantillon." else paste0("H3.2 est partiellement confirmée : l'effet est significatif sur ", if(sig_reg_a) "l'adoption" else "la confiance", " mais pas sur ", if(!sig_reg_a) "l'adoption" else "la confiance", ".")`
+</div>
+
+---
+
+# Synthèse et conclusion
+
+## Bilan des hypothèses testées
+
+Sur les 7 hypothèses testées, seule **l'approfondissement de H3.1 a révélé un lien significatif.** : la confiance envers l'IA varie significativement selon les pays, traduisant une composante culturelle et réglementaire forte.
+
+Les autres hypothèses ont été infirmées ou n'ont pas atteint le seuil de significativité statistique. Ce résultat, loin d'être un échec, est informatif : il montre que l'adoption de l'IA, bien que réelle, dépend de facteurs bien plus complexes que les seules capacités nationales, et que cette complexité justifie pleinement la nécessité de croiser statistiques et analyses qualitatives (comme nous l'avons fait avec la littérature en relations internationales).
+
+
+## Conclusion
+
+<div class="encadre-orange">
+Nous sommes partis de l'hypothèse générale que **l'adoption de l'IA est un indicateur
+de puissance économique**, à savoir que les pays les plus avancés en IA l'adopteraient
+davantage, et que cette adoption se traduirait par des avantages économiques mesurables
+et une confiance durable des citoyens.
+
+**Sur l'Axe I**, les résultats montrent que les capacités structurelles nationales
+(R&D, infrastructure, talent, stratégie gouvernementale) sont `r if(reg_mult_sig) "significativement associées" else "faiblement associées"` à l'adoption, mais le classement de maturité internationale ne prédit pas l'adoption effective. La Corée du Sud et le Japon (classés *Rising stars*) progressent bien plus vite que les USA (classés *Power players*). **Avoir les capacités ne suffit pas : encore faut-il les déployer.**
+
+**Sur l'Axe II**, les différences sectorielles dans les pertes d'emplois sont `r if(p_emp<0.05) "statistiquement établies" else "tendanciellement présentes mais non significatives"`, le Manufacturing et l'Automotive sont les plus exposés. La collaboration humain-IA présente une relation `r if(sig_collab && r_collab<0) "négative et significative avec les pertes d'emplois, confirmant l'intérêt d'un déploiement collaboratif de l'IA" else "qui mérite une interprétation nuancée au vu de nos résultats"`. Les gains de revenus liés à l'IA montrent un Gini de `r round(gini_pays,3)` par pays, soit `r if(gini_pays<0.15) "une distribution relativement équitable" else if(gini_pays<0.3) "une inégalité modérée" else "une concentration notable"`.
+
+**Sur l'Axe III**, la confiance envers l'IA `r if(p_conf_pay<0.05) "diffère significativement selon les pays : elle semble davantage culturelle que liée au niveau de développement." else "ne diffère pas de façon statistiquement établie entre pays dans notre échantillon."` L'Allemagne et le Royaume-Uni, deux économies comparables, affichent des niveaux de confiance très différents. La régulation présente des effets `r if((sig_reg_a || sig_reg_c)) "partiellement significatifs" else "non significatifs"`, avec une tension potentielle entre adoption et acceptabilité sociale.
+
+**Au total**, nos tests statistiques, réalisés sur un panel de 10 pays,
+ne permettent pas d'établir que l'adoption de l'IA est un indicateur simple et
+linéaire de puissance économique dans notre échantillon. Aucune des 7 hypothèses
+n'a été confirmée au seuil de 5 %, ce qui tient en grande partie à la faible
+puissance statistique (n = 10 pays pour les tests de l'Axe I) et aux incohérences
+constatées dans les données (voir note section 1.2). Les tendances observées —
+notamment la dissociation entre classement mondial et adoption effective, ou la
+sensibilité sectorielle aux destructions d'emplois, méritent d'être testées sur
+un panel élargi. **L'IA révèle et amplifie les dynamiques économiques et sociales
+préexistantes dans chaque pays : elle n'en est pas encore un déterminant autonome.**
+</div>
+
+## Limites
+
+- **10 pays seulement pour les tests de l'Axe I** : les régressions et ANOVA réalisées sur les moyennes par pays (n = 10) ont une puissance statistique très faible. Il est mathématiquement difficile de détecter un effet même réel avec un tel échantillon. Un R²ajusté négatif ne signifie pas "absence de relation" mais "modèle sous-alimenté".
+- **Incohérences dans les données** : comme signalé en section 1.2, certaines incohérences ont été constatées dans le dataset : les résultats sont à interpréter avec prudence.
+- **Association ≠ causalité** : nos tests montrent des liens entre variables, pas des relations de cause à effet prouvées.
+- **5 ans de données** : insuffisant pour observer des effets structurels à long terme.
+
+## Perspectives
+
+Ces résultats invitent à prolonger l'analyse par une **régression multiple** intégrant
+plusieurs axes simultanément, une extension à un panel plus large de pays avec des
+données réelles, et une **ACP** pour identifier des profils de pays selon leur rapport
+à l'IA.
+
+---
+
+# Mise en perspective : confrontation avec la littérature
+
+Au terme de notre analyse statistique, il nous a semblé utile de prendre du recul et de mettre nos résultats en regard de deux sources externes, non pas pour les valider, mais pour voir dans quelle mesure ils *s'inscrivent ou non* dans ce que d'autres travaux observent sur le même sujet. Cette démarche de confrontation reste exploratoire : nos données comportent des limites importantes (n = 10 pays, incohérences signalées) qui empêchent toute conclusion définitive.
+
+## Rapprochement avec les données OCDE (2025)
+
+L'OCDE indique que l'adoption de l'IA par les entreprises atteindrait environ **20,2 % en moyenne** parmi ses membres en 2025, avec des niveaux particulièrement élevés dans les pays avancés numériquement. À titre indicatif, les classements du Stanford AI Index et de l'Indice Mondial de l'Innovation tendent à positionner les États-Unis et la Chine parmi les leaders, suivis de pays comme le Royaume-Uni ou la Corée du Sud.
+
+Nos données *semblent aller dans le même sens* sur la hiérarchie des pays, ce qui pourrait suggérer une certaine cohérence avec la réalité, mais avec beaucoup de prudence, étant donné les limites du dataset. Ce qui est plus solide, c'est ce que l'OCDE dit sur les *déterminants* de l'adoption : elle souligne que les capacités nationales (infrastructures, compétences, financement) constituent une condition nécessaire mais non suffisante. Des facteurs de demande (culture organisationnelle, confiance dans les technologies, incitations économiques) joueraient un rôle tout aussi important. **C'est exactement la nuance que nos propres résultats suggèrent sur H1.1** : les corrélations vont dans le bon sens, mais ne sont pas statistiquement établies, probablement parce que d'autres facteurs non capturés par notre modèle interviennent.
+
+## Rapprochement avec Landwehr-Matlé, Oppermann & Lambach (*Review of International Studies*, 2026)
+
+Cet article analyse les récits stratégiques des États-Unis, de la Chine et de l'UE sur l'IA à partir de 84 documents gouvernementaux. Il n'est pas directement comparable à notre travail : c'est une analyse de discours, pas une étude statistique, mais certains de ses constats *résonnent* avec ce que nos données tendent à montrer.
+
+Sur la **dissociation entre classement et adoption réelle** : l'article observe que des pays comme la Corée du Sud progressent dans l'usage de l'IA au-delà de ce que leur rang officiel laisserait prévoir. Nos données vont dans ce sens, les *Rising stars* affichant une adoption proche des *Power players*, même si avec n = 10, on ne peut pas en tirer de conclusion robuste. Sur la **confiance comme enjeu culturel** : l'article documente que l'UE construit une stratégie autour de l'"IA de confiance", ce qui est cohérent avec notre H3.1 (la confiance varie selon les pays), mais là encore, la prudence s'impose sur l'interprétation causale.
+
+Un point que nos données ne peuvent tout simplement pas tester : l'article montre que la puissance en IA se joue aussi dans la capacité à **fixer les normes internationales**, dimension symbolique et politique qui échappe par nature à la mesure statistique. C'est une limite structurelle de notre approche.
+
+<div class="encadre-orange">
+**Pour être honnêtes :** nos résultats ne *prouvent* rien sur la question de l'IA comme indicateur de puissance. Ils *suggèrent* des tendances qui semblent cohérentes avec ce que d'autres sources observent, mais sur un échantillon trop petit et des données trop imparfaites pour aller plus loin. Ce que cette confrontation apporte, c'est surtout de montrer que les questions qu'on pose sont les bonnes, et que pour y répondre vraiment, il faudrait un panel bien plus large, des données plus fiables, et probablement des méthodes combinant statistiques et analyse qualitative.
+</div>
+
+---
+
+# Retour réflexif sur la conduite du projet {-}
+
+Ce projet a été conduit par un groupe de quatre étudiants en première année de BUT Science des Données. Prendre du recul sur la démarche nous semble aussi important que les résultats eux-mêmes.
+
+**Ce qu'on a appris à faire.** Nous avons découvert et mis en pratique des outils statistiques que nous ne connaissions pas en début d'année : corrélation de Pearson et Spearman, ANOVA, régression linéaire simple et multiple, indice de Gini, courbe de Lorenz. Au-delà des formules, nous avons appris ce que ces outils *permettent de dire* — et surtout ce qu'ils ne permettent pas de dire. Savoir interpréter une p-valeur non significative sans la rejeter comme un échec, c'est une compétence qu'on n'avait pas en septembre.
+
+**Ce qu'on a appris à accepter.** Plusieurs de nos hypothèses n'ont pas été confirmées. Au départ, c'était frustrant. On aurait pu chercher à forcer une interprétation favorable. On a choisi de ne pas le faire : nos résultats sont ce qu'ils sont, ils décrivent honnêtement ce que nos données montrent. Un résultat non significatif sur un échantillon de 10 pays n'est pas un échec — c'est une information sur les limites de nos données, pas sur la réalité du phénomène. Cette distinction, on a mis du temps à l'intégrer, mais elle nous semble essentielle pour travailler sérieusement avec des données.
+
+**Un rapport d'analyse statistique, pas seulement un rapport statistique.** C'est une distinction qui nous tient à cœur. On nous demandait de produire des tests et des graphiques. Nous avons voulu faire autre chose : utiliser les statistiques pour analyser une réalité, pas juste pour en produire une description. C'est dans cet esprit que nous avons intégré l'indice de Gini et la courbe de Lorenz — des outils appris en économie, que nous avons jugés pertinents pour éclairer la répartition des gains liés à l'IA. Les résultats obtenus n'ont pas montré ce qu'on espérait montrer. Mais le raisonnement qui nous a conduits à mobiliser ces outils-là, sur cette question-là, nous appartient entièrement — et c'est peut-être ça le plus important.
+
+**Ce qu'on a su faire au-delà du cadre.** Nous avons choisi de ne pas nous arrêter aux données. Aller chercher un article académique publié dans une revue internationale, lire un rapport de l'OCDE, confronter nos résultats à ces sources : c'était un choix, pas une consigne. Ce recul documentaire nous a permis de donner du sens à des résultats qui, seuls, auraient pu sembler décevants. Il nous a aussi appris que la statistique et l'analyse qualitative ne s'opposent pas : elles se complètent.
+
+**Ce rapport comme miroir de notre apprentissage.** Une SAE de cette ampleur en première année, c'est exigeant. Il y avait plusieurs dimensions simultanées : la programmation R, la rigueur statistique, la rédaction du rapport, et la préparation de la soutenance orale. Coordonner tout cela à quatre, avec des contraintes de temps, nous a appris autant sur le travail collaboratif que sur l'analyse de données elle-même. En lisant ce document, on retrouve ce qu'on a pu apprendre et comprendre au cours de ces derniers mois grâce à cet enseignement. Les outils statistiques qu'on utilise, on ne les connaissait pas en septembre. La capacité à prendre du recul, à accepter que nos résultats infirment nos hypothèses, à reconnaître les limites de nos données — c'est aussi quelque chose qu'on a construit progressivement. Ce rapport, c'est un reflet honnête de ce chemin. On repart avec des outils, une méthode, et — on l'espère — un peu plus de rigueur qu'en arrivant.
+
+---
+
+# Annexe — Ce que les 62 pays révèlent sur notre étude {-}
+
+<div class="encadre-bleu">
+**Pourquoi cette annexe ?** Notre analyse principale bute sur une limite statistique récurrente : n = 10 pays, ce qui rend difficile la détection d'effets même réels. Avant de conclure à l'absence de relation entre adoption de l'IA et puissance économique, il faut se demander si ce résultat ne tient pas simplement au fait que **nous avons étudié des pays trop similaires entre eux**.
+
+Le *Global AI Index* couvre 62 pays. Il ne contient pas les variables d'impact de notre analyse (adoption, confiance, revenus, emplois) — ces variables ne sont disponibles que pour nos 10 pays. Mais il permet de **situer ces 10 pays dans le contexte mondial** et de montrer pourquoi nos résultats sont ce qu'ils sont.
+
+**Argument central de cette annexe :** nos 10 pays se situent tous au-dessus du 74e percentile mondial en termes de capacités IA. Nous avons analysé le sommet de la pyramide, là où les pays se ressemblent le plus. La vraie fracture IA — celle qui révèle l'IA comme indicateur de puissance économique — se voit à l'échelle mondiale, pas à l'intérieur du club restreint des économies avancées.
+</div>
+
+
+## A1 — Nos 10 pays représentent le sommet de la pyramide mondiale
+
+```{r annexe-pyramide, include=FALSE}
+data_index_full <- data_index
+
+# Rang mondial et indicateurs de position
+idx_rank <- data_index_full |>
+  arrange(desc(Total.score)) |>
+  mutate(
+    Rank       = row_number(),
+    in_study   = Country %in% data_pays$Country,
+    Percentile = round((1 - (Rank - 1) / n()) * 100, 0)
+  )
+
+score_10_min  <- min(idx_rank |> filter(in_study) |> pull(Total.score))
+score_10_mean <- round(mean(idx_rank |> filter(in_study)  |> pull(Total.score)), 1)
+score_52_mean <- round(mean(idx_rank |> filter(!in_study) |> pull(Total.score)), 1)
+score_62_sd   <- round(sd(idx_rank$Total.score), 1)
+score_10_sd   <- round(sd(idx_rank |> filter(in_study)  |> pull(Total.score)), 1)
+pct_min       <- idx_rank |> filter(in_study) |> pull(Percentile) |> min()
+```
+
+Les 10 pays de notre étude sont tous classés dans le **top `r 62 - min(idx_rank |> filter(in_study) |> pull(Rank)) + 1`** mondial. Le moins bien classé parmi eux (Inde, rang 17) se situe quand même au-dessus du `r pct_min`e percentile mondial. Leur score moyen est de `r score_10_mean` contre `r score_52_mean` pour les 52 autres pays.
+
+```{r annexe-pyramide-plot, fig.cap="Position des 10 pays de l'étude dans le classement mondial des 62 pays", fig.height=7}
+idx_rank |>
+  mutate(
+    label = ifelse(in_study, Country, NA_character_),
+    alpha_val = ifelse(in_study, 1, 0.45)
+  ) |>
+  ggplot(aes(x = reorder(Country, Total.score),
+             y = Total.score,
+             fill = in_study,
+             alpha = in_study)) +
+  geom_col() +
+  geom_text(aes(label = label, color = in_study),
+            hjust = -0.1, size = 2.9, fontface = "bold", na.rm = TRUE) +
+  scale_fill_manual(values  = c("FALSE" = "#ccd6dd", "TRUE" = "#2e86c1"),
+                    labels  = c("52 autres pays", "10 pays de l'étude"),
+                    name    = "") +
+  scale_color_manual(values = c("FALSE" = "grey50", "TRUE" = "#1a3a5c"),
+                     guide  = "none") +
+  scale_alpha_manual(values = c("FALSE" = 0.5, "TRUE" = 1), guide = "none") +
+  geom_hline(yintercept = score_10_min, linetype = "dashed",
+             color = "#e74c3c", linewidth = 0.8) +
+  annotate("text", x = 5, y = score_10_min + 1.5,
+           label = paste0("Seuil d'entrée dans l'étude : ", round(score_10_min, 1)),
+           color = "#e74c3c", size = 3.2, fontface = "italic") +
+  coord_flip() +
+  theme_minimal(base_size = 8) +
+  theme(legend.position = "bottom",
+        axis.text.y = element_text(size = 6.5)) +
+  labs(title = "Position des 10 pays dans le classement mondial IA — 62 pays",
+       subtitle = paste0("Score moyen : 10 pays = ", score_10_mean,
+                         " | 52 autres pays = ", score_52_mean),
+       x = NULL, y = "Score global IA (AI Index)")
+```
+
+<div class="encadre-rouge">
+**Ce que ça signifie pour notre analyse :** Nos 10 pays forment un groupe **homogène par rapport au reste du monde**. L'écart-type des scores au sein des 10 pays est de `r score_10_sd` points, contre `r score_62_sd` points sur 62 pays. En réduisant la variabilité à moins d'un tiers de ce qu'elle serait sur l'ensemble du monde, nous avons mécaniquement réduit notre capacité à détecter des relations statistiques — même réelles. Ce n'est pas que l'IA n'est pas un indicateur de puissance économique : c'est que nous n'avons observé que des pays qui ont *déjà* atteint un niveau de puissance élevé.
+</div>
+
+---
+
+## A2 — La vraie fracture IA se voit à l'échelle mondiale
+
+Si l'adoption de l'IA est un indicateur de puissance économique, cette relation devrait être visible dans les **inégalités mondiales de capacités IA**. Les 62 pays permettent de le montrer là où nos 10 pays ne le pouvaient pas.
+
+```{r annexe-fracture-prep, include=FALSE}
+an62_cluster <- aov(Total.score ~ Cluster, data = data_index_full)
+an62_income  <- aov(Total.score ~ Income.group, data = data_index_full)
+an62_regime  <- aov(Total.score ~ Political.regime, data = data_index_full)
+
+f62_cl <- get_f(an62_cluster); p62_cl <- get_p(an62_cluster)
+f62_in <- get_f(an62_income);  p62_in <- get_p(an62_income)
+f62_re <- get_f(an62_regime);  p62_re <- get_p(an62_regime)
+
+# Stats par groupe de revenu
+stats_income <- data_index_full |>
+  group_by(Income.group) |>
+  summarise(moy = round(mean(Total.score), 1),
+            n   = n(), .groups = "drop")
+moy_high  <- stats_income |> filter(Income.group == "High")         |> pull(moy)
+moy_upper <- stats_income |> filter(Income.group == "Upper middle") |> pull(moy)
+moy_lower <- stats_income |> filter(Income.group == "Lower middle") |> pull(moy)
+```
+
+```{r annexe-fracture-plot, fig.cap="Score IA moyen par groupe de revenu et cluster — 62 pays", fig.height=5.5}
+pal_income <- c("High"         = "#1a9850",
+                "Upper middle" = "#f39c12",
+                "Lower middle" = "#e74c3c")
+
+p_income <- data_index_full |>
+  mutate(
+    Income.group = factor(Income.group,
+                          levels = c("High", "Upper middle", "Lower middle")),
+    in_study = Country %in% data_pays$Country
+  ) |>
+  ggplot(aes(x = Income.group, y = Total.score, fill = Income.group)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.colour = "grey40") +
+  geom_jitter(aes(shape = in_study, size = in_study), width = 0.15, alpha = 0.8) +
+  scale_fill_manual(values = pal_income, guide = "none") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 18),
+                     labels = c("Autres pays", "Pays de l'étude"), name = "") +
+  scale_size_manual(values  = c("FALSE" = 1.5, "TRUE" = 3.5), guide = "none") +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom") +
+  labs(title = paste0("Score IA par groupe de revenu (F = ", f62_in, ", p = ", p62_in, ")"),
+       x = NULL, y = "Score global IA")
+
+pal_cluster <- c("Power players"         = "#e74c3c",
+                 "Traditional champions" = "#e67e22",
+                 "Rising stars"          = "#f1c40f",
+                 "Waking up"             = "#2ecc71",
+                 "Nascent"               = "#3498db")
+
+p_cluster <- data_index_full |>
+  mutate(
+    Cluster  = factor(Cluster,
+      levels = c("Power players", "Traditional champions",
+                 "Rising stars", "Waking up", "Nascent")),
+    in_study = Country %in% data_pays$Country
+  ) |>
+  ggplot(aes(x = Cluster, y = Total.score, fill = Cluster)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(aes(shape = in_study, size = in_study), width = 0.15, alpha = 0.8) +
+  scale_fill_manual(values = pal_cluster, guide = "none") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 18),
+                     labels = c("Autres pays", "Pays de l'étude"), name = "") +
+  scale_size_manual(values  = c("FALSE" = 1.5, "TRUE" = 3.5), guide = "none") +
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 3, fill = "white") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 15, hjust = 1)) +
+  labs(title = paste0("Score IA par cluster de maturité (F = ", f62_cl, ", p = ", p62_cl, ")"),
+       x = NULL, y = "Score global IA")
+
+gridExtra::grid.arrange(p_income, p_cluster, ncol = 2)
+```
+
+<div class="encadre-vert">
+**Ce qu'on observe :** Sur 62 pays, les différences sont **hautement significatives** selon le groupe de revenu (F = `r f62_in`, p = `r p62_in`) et le cluster de maturité (F = `r f62_cl`, p = `r p62_cl`). Le score moyen passe de `r moy_high` pour les pays à revenu élevé à `r moy_lower` pour les pays à revenu intermédiaire-bas — un écart de `r moy_high - moy_lower` points. Les 40 pays *Waking up* (en vert) forment un groupe très en dessous de nos 10 pays.
+
+**Ce qu'on en conclut pour notre problématique :** L'IA **est bien** un indicateur de puissance économique — mais cette relation se confirme à l'échelle mondiale, entre des pays de niveaux très différents. À l'intérieur du club des 10 économies avancées que nous avons étudié, tout le monde est déjà "puissant" en IA : c'est comme chercher une relation entre taille et poids dans une équipe de basketball — la variabilité est trop réduite pour que la relation apparaisse clairement.
+</div>
+
+---
+
+## A3 — Ce que nos 10 pays ne peuvent pas montrer : l'étendue réelle des inégalités IA
+
+```{r annexe-inegalites, fig.cap="Étendue mondiale des capacités IA — ce que nos 10 pays ne couvrent pas", fig.height=5}
+# Créer les zones d'étude vs reste du monde
+data_index_full |>
+  arrange(desc(Total.score)) |>
+  mutate(
+    Rank     = row_number(),
+    in_study = Country %in% data_pays$Country,
+    Zone     = ifelse(in_study, "Nos 10 pays", "52 pays non couverts")
+  ) |>
+  ggplot(aes(x = Rank, y = Total.score, color = Zone, size = Zone)) +
+  geom_rect(aes(xmin = 0.5, xmax = 17.5,
+                ymin = score_10_min - 1, ymax = 102),
+            fill = "azure2", alpha = 0.04,
+            color = "azure2", linewidth = 0.4,
+            inherit.aes = FALSE) +
+  geom_point(alpha = 0.85) +
+  geom_text(aes(label = ifelse(in_study, Country, NA_character_)),
+            vjust = -1, size = 2.8, fontface = "bold", na.rm = TRUE) +
+  annotate("text", x = 9, y = 105,
+           label = "Zone couverte\npar l'étude",
+           color = "#00008B", size = 3, fontface = "bold") +
+  scale_color_manual(values = c("Nos 10 pays" = "#00008B",
+                                "52 pays non couverts" = "#aab7b8"),
+                     name = "") +
+  scale_size_manual(values  = c("Nos 10 pays" = 3.5,
+                                "52 pays non couverts" = 2),
+                    guide = "none") +
+  scale_x_continuous(breaks = c(1, 10, 20, 30, 40, 50, 62)) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom") +
+  labs(title = "Classement mondial IA - 62 pays",
+       subtitle = "Zone bleue = périmètre de notre étude | Chaque point = un pays",
+       x = "Rang mondial (1 = meilleur score)",
+       y = "Score global IA (AI Index)")
+```
+
+```{r annexe-inegalites-tab}
+# Tableau synthétique : nos 10 pays vs le reste
+bind_rows(
+  data_index_full |>
+    filter(Country %in% data_pays$Country) |>
+    summarise(
+      Groupe       = "Nos 10 pays (étude principale)",
+      n            = n(),
+      `Score moy.` = round(mean(Total.score), 1),
+      `Éc.-type`   = round(sd(Total.score), 1),
+      `Min`        = round(min(Total.score), 1),
+      `Max`        = round(max(Total.score), 1)
+    ),
+  data_index_full |>
+    filter(!Country %in% data_pays$Country) |>
+    summarise(
+      Groupe       = "52 autres pays (non couverts)",
+      n            = n(),
+      `Score moy.` = round(mean(Total.score), 1),
+      `Éc.-type`   = round(sd(Total.score), 1),
+      `Min`        = round(min(Total.score), 1),
+      `Max`        = round(max(Total.score), 1)
+    ),
+  data_index_full |>
+    summarise(
+      Groupe       = "Ensemble 62 pays",
+      n            = n(),
+      `Score moy.` = round(mean(Total.score), 1),
+      `Éc.-type`   = round(sd(Total.score), 1),
+      `Min`        = round(min(Total.score), 1),
+      `Max`        = round(max(Total.score), 1)
+    )
+) |>
+  kable(caption = "Comparaison des 10 pays de l'étude vs le reste du monde") |>
+  kable_styling(bootstrap_options = c("striped", "hover"), font_size = 12) |>
+  row_spec(1, background = "#eaf4fb", bold = TRUE) |>
+  row_spec(2, background = "#fdedec")
+```
+
+<div class="encadre-orange">
+**Synthèse de l'annexe :** Nos 10 pays ne sont pas un échantillon représentatif du monde — ils en représentent le sommet. Les 52 pays non couverts ont un score moyen de `r score_52_mean` contre `r score_10_mean` pour les nôtres, avec une variabilité bien plus faible entre eux. Cette asymétrie explique structurellement pourquoi nos hypothèses statistiques ont été difficiles à confirmer : la relation entre capacités IA et effets économiques **existe bien à l'échelle mondiale** (comme le montrent les ANOVA sur 62 pays), mais elle ne se distingue pas facilement à l'intérieur d'un groupe de pays déjà tous très avancés. Pour tester véritablement notre problématique, il faudrait un dataset d'impact couvrant l'ensemble du spectre mondial — des économies émergentes aux superpuissances IA.
+</div>
+
+
+---
+
+# Références bibliographiques {-}
+
+**Article académique**
+
+Landwehr-Matlé, J., Oppermann, K. & Lambach, D. (2026). *Great power competition for global leadership in artificial intelligence (AI): Reconstructing AI narratives of the United States, China, and the European Union*. Review of International Studies. [https://doi.org/10.1017/S0260210526101776](https://doi.org/10.1017/S0260210526101776)
+
+**Rapport institutionnel**
+
+OCDE (2026). *AI use by individuals surges across the OECD as adoption by firms continues to expand*. [https://www.oecd.org/fr/about/news/announcements/2026/01/ai-use-by-individuals-surges-across-the-oecd-as-adoption-by-firms-continues-to-expand.html](https://www.oecd.org/fr/about/news/announcements/2026/01/ai-use-by-individuals-surges-across-the-oecd-as-adoption-by-firms-continues-to-expand.html)
+
+**Données**
+
+- Kaggle. *Global AI Content Impact Dataset*. [https://www.kaggle.com](https://www.kaggle.com)
+- Tortoise Media. *Global AI Index*. [https://www.tortoisemedia.com/intelligence/global-ai](https://www.tortoisemedia.com/intelligence/global-ai)
+

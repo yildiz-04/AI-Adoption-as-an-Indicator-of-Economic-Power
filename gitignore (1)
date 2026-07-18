@@ -1,0 +1,15 @@
+# R
+.Rhistory
+/.RData
+.Rproj.user/
+*.Rproj
+
+# Knit artifacts
+analysis/*.html
+analysis/figures/
+analysis/*_files/
+analysis/*_cache/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
